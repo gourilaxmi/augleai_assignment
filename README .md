@@ -7,7 +7,7 @@
 
 An end-to-end intelligent data pipeline that:
 1. Automatically collects images and generates COCO-format annotations using Grounding DINO + SAM (Phase 1)
-2. Trains a custom CNN (AugleNet / CCNN) on the annotated dataset with TensorBoard tracking (Phase 2)
+2. Trains a custom CNN (CCNN) on the annotated dataset with TensorBoard tracking (Phase 2)
 3. Provides a natural-language RAG auditor backed by a FAISS vector index and Groq-hosted LLaMA-3 with tool-calling (Phase 3)
 
 ---
@@ -198,6 +198,18 @@ Best checkpoint is saved to Drive whenever `val_acc` improves.
 %tensorboard --logdir /content/drive/MyDrive/augle_ai/runs
 ```
 
+### Training Results
+
+**30-epoch training log (809 images, 4 classes, GPU):**
+
+![Training Loop Output](Screenshot_2026-05-09_130036.png)
+
+**Loss & Accuracy curves (Best val acc: 0.6281):**
+
+![Training Curves](Screenshot_2026-05-09_130501.png)
+
+The model converges steadily over 30 epochs. Training loss drops from 1.74 → 0.81; validation accuracy peaks at **62.81%** (epoch 17 checkpoint). Top-3 accuracy reaches 1.000 consistently from epoch 1, confirming the model ranks the correct class in its top 3 predictions for every validation sample — strong performance given the 4-class, ~900-image dataset with no pre-trained backbone.
+
 ---
 
 ## Phase 3 — Agentic RAG Data Auditor (`llm_auditor.py`)
@@ -246,54 +258,117 @@ Parameters:
 **Tool 2 — `compute_class_distribution`**
 Returns annotation counts per category, a balance score (min_count / max_count, range 0–1), and normalised Shannon entropy. Provides a plain-English imbalance interpretation.
 
-### Demo Queries
+---
 
-**Query 1 — Suspicious bounding boxes**
+## End-to-End Demo Run
+
+RAG index built from `instances.json`: **810 chunks** (809 image chunks + 1 dataset summary), embedded with `all-MiniLM-L6-v2`, stored in FAISS `IndexFlatIP` (dim=384).
+
+---
+
+### Query 1 — Suspicious Bounding Boxes (`compute_bbox_stats`)
+
 ```
-Are there any suspiciously small bounding boxes in the dataset?
+Query: Are there any suspiciously small bounding boxes in the dataset?
 Flag anything under 500 square pixels and tell me which categories are affected.
 ```
-*→ Triggers `compute_bbox_stats` with `size_threshold_px=500`.*
-
-**Query 2 — Class balance**
-```
-Is the dataset class-balanced? Show me the distribution of annotations per category
-and give a recommendation on whether I need to collect more data for any class.
-```
-*→ Triggers `compute_class_distribution`.*
-
-**Query 3 — General health report (RAG-only)**
-```
-Give me a high-level health report of this dataset: how many images,
-annotations, and categories are there, and what does the annotation density look like?
-```
-*→ Answered directly from retrieved chunks; no tool call needed.*
-
-### Sample Output
 
 ```
-Query: Is the dataset class-balanced? ...
-
 [Retrieved 5 chunks]
-  1. (score=0.821) Dataset dets: 847 images, 2341 annotations, 3 categories...
-  2. (score=0.703) Image 000001.jpg (id=1, 640x480px) contains 2 annotation(s)...
-  ...
+  1. (score=0.406) Dataset dets: 832 images, 2897 annotations, 4 categories. Category distribution: person:1769, car:705...
+  2. (score=0.320) Image dog_running_field_0014.jpg (id=184, 640x640px) contains 1 annotation(s): dog at (256,264) size...
+  3. (score=0.307) Image dog_running_field_0015.jpg (id=185, 640x640px) contains 1 annotation(s): dog at (55,311) size...
+  4. (score=0.297) Image dog_running_field_0007.jpg (id=177, 640x640px) contains 1 annotation(s): dog at (260,233) size...
+  5. (score=0.296) Image dog_running_field_0011.jpg (id=181, 640x640px) contains 1 annotation(s): dog at (245,47) size...
 
-[Tool Call] compute_class_distribution({})
+[Tool Call] compute_bbox_stats({"category_filter": "", "size_threshold_px": 500})
 [Tool Result] {
-  "total_annotations": 2341,
-  "num_categories": 3,
-  "per_category": {"person": 1102, "car": 891, "dog": 348},
-  "balance_score": 0.3160,
-  "normalized_entropy": 0.9421,
-  "interpretation": "Moderate imbalance"
+  "threshold_px": 500,
+  "category_filter": "all",
+  "per_category": {
+    "person": {"count": 1769, "mean_area": 35342.3, "min_area": 55, "max_area": 408321, "std_area": 64917.8},
+    "car":    {"count": 705,  "mean_area": 48841.4, "min_area": 48, ...},
+    "dog":    {"count": 416,  ...},
+    "person dog": {"count": 7, ...}
+  },
+  "suspicious_count": 200
 }
 
 [Answer]
-The dataset has moderate class imbalance. `person` dominates with 1102 annotations
-(47%), followed by `car` at 891 (38%) and `dog` at 348 (15%). The balance score
-of 0.316 and entropy of 0.942 confirm the skew. Recommendation: collect an
-additional ~400–500 dog images to bring the distribution closer to parity.
+The categories affected by suspiciously small bounding boxes (under 500 square pixels) are
+"person", "car", "dog", and "person dog". There are 200 suspicious annotations in total,
+with the smallest area being 55 square pixels for the "person" category.
+```
+
+---
+
+### Query 2 — Class Balance (`compute_class_distribution`)
+
+```
+Query: Is the dataset class-balanced? Show me the distribution of annotations per category
+and give a recommendation on whether I need to collect more data for any class.
+```
+
+```
+[Retrieved 5 chunks]
+  1. (score=0.515) Dataset dets: 832 images, 2897 annotations, 4 categories. Category distribution: person:1769, car:705...
+  2. (score=0.354) Image 0002eed6350f1840.jpg (id=337, 640x640px) contains 1 annotation(s): person at (0,0) size 431x27...
+  ...
+
+[Tool Call] compute_class_distribution(null)
+[Tool Result] {
+  "total_annotations": 2897,
+  "num_categories": 4,
+  "per_category": {
+    "person":     1769,
+    "car":         705,
+    "dog":         416,
+    "person dog":    7
+  },
+  "balance_score": 0.004,
+  "normalized_entropy": 0.6769,
+  "most_common":  ["person", 1769],
+  "least_common": ["person dog", 7],
+  "interpretation": "Severe imbalance — consider re-collecting data"
+}
+
+[Answer]
+The dataset is severely imbalanced, with "person" dominating at 1769 annotations (61%)
+while "person dog" has only 7 (0.2%). The balance score of 0.004 and normalized entropy
+of 0.6769 confirm the skew. Recommendation: collect more data for the "person dog", "dog",
+and "car" categories to bring the distribution closer to parity.
+```
+
+---
+
+### Query 3 — Dataset Health Report (RAG-only)
+
+```
+Query: Give me a high-level health report of this dataset: how many images, annotations,
+and categories are there, and what does the annotation density look like?
+```
+
+```
+[Retrieved 5 chunks]
+  1. (score=0.544) Dataset dets: 832 images, 2897 annotations, 4 categories...
+  2. (score=0.485) Image 00074503ceae5131.jpg (id=640, 640x640px) contains 1 annotation(s): dog...
+  ...
+
+[Tool Call] compute_class_distribution(null)
+[Tool Result] {
+  "total_annotations": 2897,
+  "num_categories": 4,
+  "per_category": {"person": 1769, "car": 705, "dog": 416, "person dog": 7},
+  "balance_score": 0.004,
+  "normalized_entropy": 0.6769
+}
+
+[Answer]
+The dataset consists of 832 images, 2897 annotations, and 4 categories. Average annotation
+density is ~3.5 annotations/image. The distribution is severely imbalanced — "person"
+accounts for 61% of annotations. The balance score of 0.004 and normalized entropy of
+0.6769 indicate the dataset would benefit from re-collection to achieve a more balanced
+distribution.
 ```
 
 ---
