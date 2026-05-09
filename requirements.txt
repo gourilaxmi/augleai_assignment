@@ -1,0 +1,35 @@
+# ── Core ──────────────────────────────────────────────────────────────────────
+torch==2.3.0
+torchvision==0.18.0
+numpy==1.26.4
+Pillow==10.3.0
+opencv-python-headless==4.9.0.80
+
+# ── Grounding DINO (installed from source — see README) ───────────────────────
+# git clone https://github.com/IDEA-Research/GroundingDINO.git
+# pip install -e GroundingDINO/
+supervision==0.19.0
+transformers==4.38.2
+addict==2.4.0
+yapf==0.40.2
+timm==0.9.16
+pycocotools==2.0.7
+
+# ── SAM (installed from source — see README) ──────────────────────────────────
+# pip install git+https://github.com/facebookresearch/segment-anything.git
+
+# ── Playwright ────────────────────────────────────────────────────────────────
+playwright==1.43.0
+
+# ── Dataset Collection ────────────────────────────────────────────────────────
+# FIX: fiftyone was missing — used in dataset_creation.py for Open Images V7
+fiftyone==0.23.8
+
+# ── Training ──────────────────────────────────────────────────────────────────
+tensorboard==2.16.2
+matplotlib==3.8.4
+
+# ── RAG Auditor ───────────────────────────────────────────────────────────────
+faiss-cpu==1.8.0
+sentence-transformers==2.7.0
+groq==0.5.0
