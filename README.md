@@ -202,11 +202,11 @@ Best checkpoint is saved to Drive whenever `val_acc` improves.
 
 **30-epoch training log (809 images, 4 classes, GPU):**
 
-![Training Loop Output](Screenshot_2026-05-09_130036.png)
+![Training Loop Output](training_logs.png)
 
 **Loss & Accuracy curves (Best val acc: 0.6281):**
 
-![Training Curves](Screenshot_2026-05-09_130501.png)
+![Training Curves](training_curves.png)
 
 The model converges steadily over 30 epochs. Training loss drops from 1.74 → 0.81; validation accuracy peaks at **62.81%** (epoch 17 checkpoint). Top-3 accuracy reaches 1.000 consistently from epoch 1, confirming the model ranks the correct class in its top 3 predictions for every validation sample — strong performance given the 4-class, ~900-image dataset with no pre-trained backbone.
 
